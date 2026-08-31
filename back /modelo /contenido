@@ -1,1 +1,200 @@
+calificaiones ------------------------------------------------------------------------------------
 
+const mongoose = require('mongoose');
+
+const calificacionSchema = new mongoose.Schema({
+    profesionalId: { 
+        type: mongoose.Schema.Types.ObjectId, 
+        ref: 'Profesional', 
+        required: [true, 'El profesional es obligatorio'] 
+    },
+    usuarioId: { 
+        type: mongoose.Schema.Types.ObjectId, 
+        ref: 'User', 
+        required: [true, 'El usuario que califica es obligatorio'] 
+    },
+    puntuacion: { 
+        type: Number, 
+        required: [true, 'La puntuación es obligatoria'], 
+        min: [1, 'La calificación mínima es 1 estrella'], 
+        max: [5, 'La calificación máxima es 5 estrellas'] 
+    },
+    comentario: { 
+        type: String, 
+        trim: true, 
+        maxlength: [500, 'El comentario no puede superar los 500 caracteres'] 
+    }
+}, { timestamps: true });
+
+// Evita que un mismo usuario califique más de una vez 
+calificacionSchema.index({ profesionalId: 1, usuarioId: 1 }, { unique: true });
+
+module.exports = mongoose.model('Calificacion', calificacionSchema);
+
+
+categoria ------------------------------------------------------------------------------------
+
+const mongoose = require('mongoose');
+
+const categoriaSchema = new mongoose.Schema({
+    nombre: { 
+        type: String, 
+        required: [true, 'El nombre de la categoría es obligatorio'], 
+        unique: true, 
+        trim: true 
+    },
+    descripcion: { 
+        type: String, 
+        trim: true 
+    },
+    estado: { 
+        type: Boolean, 
+        default: true // Permite activar o desactivar categorías desde el admin
+    }
+}, { timestamps: true });
+
+module.exports = mongoose.model('Categoria', categoriaSchema);
+
+
+
+profecional ------------------------------------------------------------------------------------
+
+const mongoose = require('mongoose');
+
+const profesionalSchema = new mongoose.Schema({
+    usuarioId: { 
+        type: mongoose.Schema.Types.ObjectId, 
+        ref: 'User', 
+        required: [true, 'El usuario es obligatorio'] 
+    },
+    categoriaId: { 
+        type: mongoose.Schema.Types.ObjectId, 
+        ref: 'Categoria', 
+        required: [true, 'La categoría es obligatoria'] 
+    },
+    profesion: { 
+        type: String, 
+        required: [true, 'La profesión o título es obligatorio'],
+        trim: true 
+    },
+    telefono: { 
+        type: String, 
+        required: [true, 'El teléfono de contacto es obligatorio'] 
+    },
+    ubicacion: { 
+        type: String, 
+        required: [true, 'La ubicación o ciudad es obligatoria'] 
+    },
+    descripcion: { 
+        type: String, 
+        trim: true 
+    },
+    experienciaAnos: { 
+        type: Number, 
+        default: 0 
+    },
+    servicios: [{ 
+        type: String 
+    }],
+    promedioCalificacion: { 
+        type: Number, 
+        default: 0 
+    },
+    totalResenas: { 
+        type: Number, 
+        default: 0 
+    },
+    estado: { 
+        type: Boolean, 
+        default: true 
+    }
+}, { timestamps: true });
+
+module.exports = mongoose.model('Profesional', profesionalSchema);
+
+
+
+
+rol ------------------------------------------------------------------------------------
+
+
+const mongoose = require('mongoose');
+
+const rolSchema = new mongoose.Schema({
+  nombre: {
+    type: String,
+    required: [true, 'El nombre del rol es obligatorio'],
+    trim: true,
+    unique: true
+  },
+  descripcion: {
+    type: String,
+    trim: true
+  }
+}, {
+  timestamps: true
+});
+
+module.exports = mongoose.model('Rol', rolSchema);
+
+
+
+users ------------------------------------------------------------------------------------
+
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+
+const rolEmbeddedSchema = new mongoose.Schema({
+  nombre: {
+    type: String,
+    required: [true, 'El nombre del rol es obligatorio'],
+    trim: true
+  },
+  descripcion: {
+    type: String,
+    trim: true
+  }
+}, { _id: false });
+
+const userSchema = new mongoose.Schema({
+  username: {
+    type: String,
+    required: [true, 'El nombre de usuario es obligatorio'],
+    trim: true,
+    unique: true
+  },
+  email: {
+    type: String,
+    required: [true, 'El email es obligatorio'],
+    unique: true,
+    lowercase: true,
+    match: [/^\S+@\S+\.\S+$/, 'Por favor usa un email válido']
+  },
+  password: {
+    type: String,
+    required: [true, 'La contraseña es obligatoria'],
+    minlength: 6
+  },
+  rol: {
+    type: rolEmbeddedSchema,
+    required: [true, 'El rol es obligatorio']
+  },
+  rolId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Rol'
+  }
+}, {
+  timestamps: true
+});
+
+
+userSchema.pre('save', async function () {
+  if (!this.isModified('password')) return;
+  this.password = await bcrypt.hash(this.password, 10);
+});
+
+userSchema.methods.comparePassword = function (candidatePassword) {
+  return bcrypt.compare(candidatePassword, this.password);
+};
+
+module.exports = mongoose.model('User', userSchema);
