@@ -1,1 +1,582 @@
 
+autenticacion ------------------------------------------------------------------------------------------
+
+const jwt = require('jsonwebtoken');
+const User = require('../models/user');
+const Rol = require('../models/rol');
+
+const signToken = (user) => 
+    jwt.sign(
+        { id: user._id, rol: user?.rol?.nombre },
+        process.env.JWT_SECRET,
+        { expiresIn: '1d' }
+    );
+
+const login = async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        const user = await User.findOne({ email });
+
+        if (!user) {
+            return res.status(401).json({ error: "El correo es inválido" });
+        }
+
+        const isMatch = await user.comparePassword(password);
+        if (!isMatch) {
+            return res.status(401).json({ error: "La contraseña es inválida" });
+        }
+
+        const token = signToken(user);
+        const userResponse = user.toObject();
+        delete userResponse.password;
+
+        res.json({ user: userResponse, token });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+const register = async (req, res) => {
+    try {
+        const { username, email, password } = req.body; // Ignoramos req.body.rol de la petición
+
+        if (!username || !email || !password) {
+            return res.status(400).json({ error: "username, email y password son requeridos" });
+        }
+
+ 
+        const nombreRol = 'usuario';
+        const descripcionRol = 'Rol usuario';
+
+    
+        let targetRol = await Rol.findOne({ nombre: nombreRol });
+        if (!targetRol) {
+            targetRol = await Rol.create({
+                nombre: nombreRol,
+                descripcion: descripcionRol
+            });
+        }
+
+       
+        const newUser = new User({
+            username,
+            email, 
+            password,
+            rolId: targetRol._id, 
+            rol: { nombre: targetRol.nombre, descripcion: targetRol.descripcion }
+        });
+
+        const savedUser = await newUser.save();
+        const token = signToken(savedUser);
+
+        const userResponse = savedUser.toObject();
+        delete userResponse.password;
+
+        res.status(201).json({ user: userResponse, token });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+};
+
+
+
+const deleteUser = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const usuarioEliminado = await User.findByIdAndDelete(id);
+
+        if (!usuarioEliminado) {
+            return res.status(404).json({ error: "Usuario no encontrado" });
+        }
+
+        res.status(200).json({ 
+            mensaje: "Usuario eliminado correctamente de la base de datos",
+            usuario: usuarioEliminado 
+        });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+};
+
+
+const getUsers = async (req, res) => {
+    try {
+        // Busca todos los usuarios omitiendo el campo password
+        const users = await User.find().select('-password');
+        
+        res.status(200).json({
+            total: users.length,
+            users
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+
+// Actualizar datos del usuario (update)
+const updateUser = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { username, email, password } = req.body;
+
+        let datosActualizar = {};
+        if (username) datosActualizar.username = username;
+        if (email) datosActualizar.email = email;
+
+        // Si envía contraseña nueva, la encriptamos antes de guardar
+        if (password) {
+            const salt = await bcrypt.genSalt(10);
+            datosActualizar.password = await bcrypt.hash(password, salt);
+        }
+
+        const usuarioActualizado = await User.findByIdAndUpdate(
+            id,
+            datosActualizar,
+            { new: true, runValidators: true }
+        ).select('-password');
+
+        if (!usuarioActualizado) {
+            return res.status(404).json({ error: "Usuario no encontrado" });
+        }
+
+        res.status(200).json({
+            mensaje: "Usuario actualizado correctamente",
+            usuario: usuarioActualizado
+        });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+};
+
+
+
+module.exports = {
+    login,
+    register,
+    deleteUser,
+    getUsers,
+    updateUser
+};
+
+
+calificacion ------------------------------------------------------------------------------------------
+
+const Calificacion = require('../models/calificacion');
+const Profesional = require('../models/profecional');
+
+
+const create = async (req, res) => {
+    try {
+        const usuarioId = req.user?.id || req.user?._id || req.body.usuarioId;
+        const { profesionalId, puntuacion, comentario } = req.body;
+
+        if (!usuarioId) {
+            return res.status(400).json({ error: 'El usuarioId es obligatorio para calificar' });
+        }
+
+        // Verificar si el profesional existe
+        const profesional = await Profesional.findById(profesionalId);
+        if (!profesional) {
+            return res.status(404).json({ error: 'Profesional no encontrado' });
+        }
+
+        // Guardar o actualizar la calificación (Upsert)
+        const calificacion = await Calificacion.findOneAndUpdate(
+            { profesionalId, usuarioId },
+            { puntuacion, comentario },
+            { new: true, upsert: true, runValidators: true }
+        );
+
+        // Recalcular el promedio y total de reseñas para el profesional
+        const todasLasCalificaciones = await Calificacion.find({ profesionalId });
+        const totalResenas = todasLasCalificaciones.length;
+        const sumaPuntuaciones = todasLasCalificaciones.reduce((acc, c) => acc + c.puntuacion, 0);
+        const promedioCalificacion = (sumaPuntuaciones / totalResenas).toFixed(1);
+
+        // Actualizar datos en el perfil del profesional
+        await Profesional.findByIdAndUpdate(profesionalId, {
+            promedioCalificacion: Number(promedioCalificacion),
+            totalResenas
+        });
+
+        res.status(201).json({
+            mensaje: 'Calificación registrada correctamente',
+            calificacion
+        });
+    } catch (error) {
+        if (error.code === 11000) {
+            return res.status(400).json({ error: 'Ya has calificado a este profesional anteriormente' });
+        }
+        res.status(400).json({ error: error.message });
+    }
+};
+
+
+const getByProfesional = async (req, res) => {
+    try {
+        const { profesionalId } = req.params;
+
+        const calificaciones = await Calificacion.find({ profesionalId })
+            .populate('usuarioId', 'username email')
+            .sort({ createdAt: -1 });
+
+        res.status(200).json(calificaciones);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+
+const update = async (req, res) => {
+    try {
+        const { id } = req.params; // ID de la calificación
+        const { puntuacion, comentario } = req.body;
+
+        const calificacion = await Calificacion.findByIdAndUpdate(
+            id,
+            { puntuacion, comentario },
+            { new: true, runValidators: true }
+        );
+
+        if (!calificacion) {
+            return res.status(404).json({ error: 'Calificación no encontrada' });
+        }
+
+        // Recalcular promedio y total de reseñas del profesional
+        const todasLasCalificaciones = await Calificacion.find({ profesionalId: calificacion.profesionalId });
+        const totalResenas = todasLasCalificaciones.length;
+        const sumaPuntuaciones = todasLasCalificaciones.reduce((acc, c) => acc + c.puntuacion, 0);
+        const promedioCalificacion = totalResenas > 0 ? (sumaPuntuaciones / totalResenas).toFixed(1) : 0;
+
+        await Profesional.findByIdAndUpdate(calificacion.profesionalId, {
+            promedioCalificacion: Number(promedioCalificacion),
+            totalResenas
+        });
+
+        res.status(200).json({
+            mensaje: 'Calificación actualizada correctamente',
+            calificacion
+        });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+};
+
+const destroy = async (req, res) => {
+    try {
+        const { id } = req.params; // ID de la calificación
+
+        // Eliminar directamente de MongoDB
+        const calificacionEliminada = await Calificacion.findByIdAndDelete(id);
+
+        if (!calificacionEliminada) {
+            return res.status(404).json({ error: 'Calificación no encontrada' });
+        }
+
+        // Recalcular promedio tras eliminar
+        const todasLasCalificaciones = await Calificacion.find({ profesionalId: calificacionEliminada.profesionalId });
+        const totalResenas = todasLasCalificaciones.length;
+        const sumaPuntuaciones = todasLasCalificaciones.reduce((acc, c) => acc + c.puntuacion, 0);
+        const promedioCalificacion = totalResenas > 0 ? (sumaPuntuaciones / totalResenas).toFixed(1) : 0;
+
+        await Profesional.findByIdAndUpdate(calificacionEliminada.profesionalId, {
+            promedioCalificacion: Number(promedioCalificacion),
+            totalResenas
+        });
+
+        res.status(200).json({
+            mensaje: 'Calificación eliminada permanentemente de la base de datos',
+            calificacion: calificacionEliminada
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+module.exports = { create, getByProfesional, update, destroy };
+
+
+
+categoria------------------------------------------------------------------------------------------
+
+const Categoria = require('../models/categoria');
+
+
+const index = async (req, res) => {
+    try {
+        const categorias = await Categoria.find({ estado: true });
+        res.status(200).json(categorias);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+
+const create = async (req, res) => {
+    try {
+        const nuevaCategoria = new Categoria(req.body);
+        const categoriaGuardada = await nuevaCategoria.save();
+        res.status(201).json(categoriaGuardada);
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+};
+
+
+const show = async (req, res) => {
+    try {
+        const categoria = await Categoria.findById(req.params.id);
+        if (!categoria) {
+            return res.status(404).json({ error: 'Categoría no encontrada' });
+        }
+        res.status(200).json(categoria);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+
+const destroy = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const categoriaEliminada = await Categoria.findByIdAndDelete(id);
+
+        if (!categoriaEliminada) {
+            return res.status(404).json({ error: 'Categoría no encontrada' });
+        }
+
+        res.status(200).json({
+            mensaje: 'Categoría eliminada de la base de datos',
+            categoria: categoriaEliminada
+        });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+};
+
+const update = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const categoriaActualizada = await Categoria.findByIdAndUpdate(
+            id,
+            req.body,
+            { new: true, runValidators: true }
+        );
+
+        if (!categoriaActualizada) {
+            return res.status(404).json({ error: 'Categoría no encontrada' });
+        }
+
+        res.status(200).json({
+            mensaje: 'Categoría actualizada correctamente',
+            categoria: categoriaActualizada
+        });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+};
+
+module.exports = { index, create, show, destroy, update };
+
+
+profecional------------------------------------------------------------------------------------------
+
+
+const Profesional = require('../models/profecional');
+
+
+const index = async (req, res) => {
+    try {
+        const { categoriaId, search } = req.query;
+        let query = { estado: true };
+
+        // Filtrar por categoría si viene en los query params (?categoriaId=...)
+        if (categoriaId) {
+            query.categoriaId = categoriaId;
+        }
+
+        // Buscar por texto en profesión o ubicación (?search=electricista)
+        if (search) {
+            query.$or = [
+                { profesion: { $regex: search, $options: 'i' } },
+                { ubicacion: { $regex: search, $options: 'i' } },
+                { servicios: { $regex: search, $options: 'i' } }
+            ];
+        }
+
+        const profesionales = await Profesional.find(query)
+            .populate('usuarioId', 'username email')
+            .populate('categoriaId', 'nombre');
+
+        res.status(200).json(profesionales);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+
+const create = async (req, res) => {
+    try {
+        // PERMITIR USAR EL usuarioId QUE VIENE DEL FRONTEND (si se envía), 
+        // o recurrir al usuario del token si no se especifica.
+        const usuarioIdAUsar = req.body.usuarioId || req.user?.id || req.user?._id;
+
+        if (!usuarioIdAUsar) {
+            return res.status(400).json({ error: 'El ID de usuario es obligatorio' });
+        }
+
+        // Verificar si ESTE usuario específico ya tiene un perfil profesional registrado
+        const existePerfil = await Profesional.findOne({ usuarioId: usuarioIdAUsar });
+        if (existePerfil) {
+            return res.status(400).json({ error: 'Este usuario ya tiene un perfil profesional registrado' });
+        }
+
+        const nuevoProfesional = new Profesional({
+            ...req.body,
+            usuarioId: usuarioIdAUsar // Aseguramos que guarde el ID correcto del usuario seleccionado
+        });
+
+        const profesionalGuardado = await nuevoProfesional.save();
+        res.status(201).json(profesionalGuardado);
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+};
+
+
+const show = async (req, res) => {
+    try {
+        const profesional = await Profesional.findById(req.params.id)
+            .populate('usuarioId', 'username email')
+            .populate('categoriaId', 'nombre descripcion');
+
+        if (!profesional) {
+            return res.status(404).json({ error: 'Profesional no encontrado' });
+        }
+
+        res.status(200).json(profesional);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+
+
+const destroy = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Elimina el documento por completo de MongoDB
+        const profesionalEliminado = await Profesional.findByIdAndDelete(id);
+
+        if (!profesionalEliminado) {
+            return res.status(404).json({ error: 'Profesional no encontrado' });
+        }
+
+        res.status(200).json({
+            mensaje: 'Perfil profesional eliminado permanentemente de la base de datos',
+            profesional: profesionalEliminado
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+
+const update = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const profesionalActualizado = await Profesional.findByIdAndUpdate(
+            id,
+            req.body,
+            { new: true, runValidators: true }
+        )
+        .populate('usuarioId', 'username email')
+        .populate('categoriaId', 'nombre descripcion');
+
+        if (!profesionalActualizado) {
+            return res.status(404).json({ error: 'Perfil profesional no encontrado' });
+        }
+
+        res.status(200).json({
+            mensaje: 'Perfil profesional actualizado correctamente',
+            profesional: profesionalActualizado
+        });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+};
+
+module.exports = { index, create, show, destroy, update };
+
+rol ------------------------------------------------------------------------------------------
+
+const Rol = require('../models/rol');
+
+const index = async (req, res) => {
+    try {
+        const roles = await Rol.find();
+        res.json(roles);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+const show = async (req, res) => {
+    try {
+        const rol = await Rol.findById(req.params.id);
+        if (!rol) return res.status(404).json({ error: 'Rol no encontrado' });
+        res.json(rol);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+const create = async (req, res) => {
+    try {
+        const newRol = new Rol(req.body);
+        const savedRol = await newRol.save();
+        res.status(201).json(savedRol);
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+};
+
+const update = async (req, res) => {
+    try {
+        // 🚨 CORREGIDO: Se cambia findById por findByIdAndUpdate
+        const rol = await Rol.findByIdAndUpdate(req.params.id, req.body, {
+            new: true,
+            runValidators: true
+        });
+        if (!rol) return res.status(404).json({ error: 'Rol no encontrado' });
+        res.json(rol);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+const destroy = async (req, res) => {
+    try {
+        // 🚨 CORREGIDO: Se cambia findById por findByIdAndDelete
+        const rol = await Rol.findByIdAndDelete(req.params.id);
+        if (!rol) return res.status(404).json({ error: 'Rol no encontrado' });
+        res.status(200).json({ message: 'Rol eliminado correctamente' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+module.exports = {
+    index,
+    show, 
+    create,
+    update,
+    destroy
+};
+
+
