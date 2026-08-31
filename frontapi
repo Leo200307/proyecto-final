@@ -1,0 +1,384 @@
+AuthApi.js----------------------------------------------------------------------------------------------------------------------
+
+const API_URL = 'http://localhost:5000/api/auth/login';
+
+export async function postLogin(email, password) {
+  const respuesta = await fetch(API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      email: email,
+      password: password,
+    }),
+  });
+
+  
+  const datos = await respuesta.json();
+
+
+  if (!respuesta.ok) {
+    throw new Error(datos.mensaje || datos.message || 'Error en la autenticación');
+  }
+
+ 
+  return datos;
+}
+
+
+CalificacionesApi.js----------------------------------------------------------------------------------------------------------------------
+
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+const API_URL_PROF = 'http://localhost:5000/api/profesionales';
+const API_URL_CALIF = 'http://localhost:5000/api/calificaciones';
+
+
+export async function getProfesionales() {
+  try {
+    const token = await AsyncStorage.getItem('token');
+    const respuesta = await fetch(API_URL_PROF, {
+      method: 'GET',
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    const data = await respuesta.json();
+    if (!respuesta.ok) throw new Error(data.error || 'No se pudieron cargar los profesionales');
+    return Array.isArray(data) ? data : (data.profesionales || data.data || []);
+  } catch (error) {
+    throw error;
+  }
+}
+
+
+export async function getCalificacionesPorProfesional(id) {
+  try {
+    const token = await AsyncStorage.getItem('token');
+    
+  
+    let respuesta = await fetch(`${API_URL_CALIF}/profesional/${id}`, {
+      method: 'GET',
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+
+   
+    if (!respuesta.ok) {
+      respuesta = await fetch(`${API_URL_CALIF}/usuario/${id}`, {
+        method: 'GET',
+        headers: { 'Authorization': 'Bearer ' + token },
+      });
+    }
+
+    const data = await respuesta.json();
+    if (!respuesta.ok) return []; 
+    
+    return Array.isArray(data) ? data : (data.calificaciones || data.data || []);
+  } catch (error) {
+    return [];
+  }
+}
+
+
+export async function crearCalificacion(datosCalificacion) {
+  try {
+    const token = await AsyncStorage.getItem('token');
+    const respuesta = await fetch(API_URL_CALIF, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token,
+      },
+      body: JSON.stringify(datosCalificacion),
+    });
+    const data = await respuesta.json();
+    if (!respuesta.ok) throw new Error(data.error || 'No se pudo crear la calificación');
+    return data;
+  } catch (error) {
+    throw error;
+  }
+}
+
+
+export async function eliminarCalificacion(id) {
+  try {
+    const token = await AsyncStorage.getItem('token');
+    const respuesta = await fetch(`${API_URL_CALIF}/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    const data = await respuesta.json();
+    if (!respuesta.ok) throw new Error(data.error || 'No se pudo eliminar la calificación');
+    return data;
+  } catch (error) {
+    throw error;
+  }
+}
+
+
+CategoriaApi.js----------------------------------------------------------------------------------------------------------------------
+
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+const API_URL = 'http://localhost:5000/api/categoria';
+
+
+export async function getCategorias() {
+  try {
+    const token = await AsyncStorage.getItem('token');
+    const respuesta = await fetch(API_URL, {
+      method: 'GET',
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    const data = await respuesta.json();
+    if (!respuesta.ok) throw new Error(data.error || 'No se pudieron cargar las categorías');
+    return Array.isArray(data) ? data : (data.categorias || data.data || []);
+  } catch (error) {
+    throw error;
+  }
+}
+
+
+export async function crearCategoria(datosCategoria) {
+  try {
+    const token = await AsyncStorage.getItem('token');
+    const respuesta = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token,
+      },
+      body: JSON.stringify(datosCategoria),
+    });
+    const data = await respuesta.json();
+    if (!respuesta.ok) throw new Error(data.error || 'No se pudo crear la categoría');
+    return data;
+  } catch (error) {
+    throw error;
+  }
+}
+
+
+export async function eliminarCategoria(id) {
+  try {
+    const token = await AsyncStorage.getItem('token');
+    const respuesta = await fetch(`${API_URL}/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    const data = await respuesta.json();
+    if (!respuesta.ok) throw new Error(data.error || 'No se pudo eliminar la categoría');
+    return data;
+  } catch (error) {
+    throw error;
+  }
+}
+
+ProfecionalesApi.js----------------------------------------------------------------------------------------------------------------------
+
+
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+const API_URL = 'http://localhost:5000/api/profesionales';
+
+
+export async function getMiPerfilProfesional() {
+  try {
+    const token = await AsyncStorage.getItem('token');
+    const respuesta = await fetch(`${API_URL}/mi-perfil`, {
+      method: 'GET',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+      },
+    });
+    const data = await respuesta.json();
+    if (!respuesta.ok) return null; 
+    return data;
+  } catch (error) {
+    return null;
+  }
+}
+
+// Crear perfil profesional
+export async function crearPerfilProfesional(datosPerfil) {
+  try {
+    const token = await AsyncStorage.getItem('token');
+    const respuesta = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token,
+      },
+      body: JSON.stringify(datosPerfil),
+    });
+    const data = await respuesta.json();
+    if (!respuesta.ok) throw new Error(data.error || 'No se pudo crear el perfil');
+    return data;
+  } catch (error) {
+    throw error;
+  }
+}
+
+
+export async function eliminarPerfilProfesional(id) {
+  try {
+    const token = await AsyncStorage.getItem('token');
+    const respuesta = await fetch(`${API_URL}/${id}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+      },
+    });
+    const data = await respuesta.json();
+    if (!respuesta.ok) throw new Error(data.error || 'No se pudo eliminar el perfil');
+    return data;
+  } catch (error) {
+    throw error;
+  }
+}
+
+
+RolApi.js----------------------------------------------------------------------------------------------------------------------
+
+
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+// Usamos localhost directamente para pruebas en la PC (Web)
+const API_URL = 'http://localhost:5000/api/roles';
+
+export async function getRoles() {
+  const token = await AsyncStorage.getItem('token');
+  
+  const respuesta = await fetch(API_URL, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + token,
+    },
+  });
+
+  if (!respuesta.ok) {
+    throw new Error('Error al obtener los roles');
+  } 
+  return await respuesta.json();
+}
+
+export async function postRol(nombre) {
+  const token = await AsyncStorage.getItem('token');  
+  const respuesta = await fetch(API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + token,
+    },
+    body: JSON.stringify({
+      nombre: nombre,
+    }),
+  });
+
+  if (!respuesta.ok) {
+    throw new Error('Error al crear el rol');
+  }
+  return await respuesta.json();
+}
+
+
+export async function deleteRol(id) {
+  const token = await AsyncStorage.getItem('token');
+
+  const respuesta = await fetch(`${API_URL}/${id}`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + token,
+    },
+  });
+
+  if (!respuesta.ok) {
+    throw new Error('Error al eliminar el rol');
+  }
+  
+  return await respuesta.json();
+}
+
+
+UserApi.js----------------------------------------------------------------------------------------------------------------------
+
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+const API_URL = 'http://localhost:5000/api/auth/users';
+const AUTH_URL = 'http://localhost:5000/api/auth';
+
+
+export async function getUsers() {
+  try {
+    const token = await AsyncStorage.getItem('token');
+    
+    const respuesta = await fetch(API_URL, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token,
+      },
+    });
+
+    const data = await respuesta.json();
+
+    if (!respuesta.ok) {
+      throw new Error(data.error || 'Error al obtener los usuarios');
+    } 
+    
+    return data;
+  } catch (error) {
+    console.error("EXCEPCIÓN CAPTURADA EN getUsers:", error);
+    throw error;
+  }
+}
+
+
+export async function registerUser(userData) {
+  try {
+    const respuesta = await fetch(`${AUTH_URL}/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(userData),
+    });
+
+    const data = await respuesta.json();
+
+    if (!respuesta.ok) {
+      throw new Error(data.error || 'No se pudo registrar el usuario');
+    }
+
+    return data;
+  } catch (error) {
+    console.error("EXCEPCIÓN CAPTURADA EN registerUser:", error);
+    throw error;
+  }
+}
+
+// Eliminar un usuario por ID
+export async function deleteUser(id) {
+  try {
+    const token = await AsyncStorage.getItem('token');
+    
+    const respuesta = await fetch(`${API_URL}/${id}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+      },
+    });
+
+    const data = await respuesta.json();
+
+    if (!respuesta.ok) {
+      throw new Error(data.error || 'No se pudo eliminar el usuario');
+    }
+
+    return data;
+  } catch (error) {
+    console.error("EXCEPCIÓN CAPTURADA EN deleteUser:", error);
+    throw error;
+  }
+}
