@@ -1,0 +1,5 @@
+PORT=5000
+MONGO_URI=mongodb://localhost:27017/presentacion
+
+JWT_SECRET = 4c655467db4e32768c2ecb23cebd6ae3570da39c9a33291c776fafd9dbfd7b47
+JWT_EXPIRES_IN = id
