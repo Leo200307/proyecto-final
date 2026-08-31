@@ -1,1 +1,1138 @@
 
+
+calificaciones -------------------------------------------------------------------------------------------------------------------------------------------------------
+
+import React, { useEffect, useState } from 'react';
+import { 
+  View, Text, TextInput,TouchableOpacity,FlatList, StyleSheet, Modal, Platform,ScrollView,Alert } from "react-native";
+import { getUsers } from "../api/UserApi"; 
+import { 
+  getProfesionales,
+  getCalificacionesPorProfesional, 
+  crearCalificacion, 
+  eliminarCalificacion 
+} from "../api/CalificacionesApi";
+
+export default function Calificaciones() {
+  const [usuariosConPerfil, setUsuariosConPerfil] = useState([]);
+  const [cargando, setCargando] = useState(true);
+
+
+  const [modalVisible, setModalVisible] = useState(false);
+  const [usuarioSeleccionado, setUsuarioSeleccionado] = useState(null);
+  const [calificaciones, setCalificaciones] = useState([]);
+  const [cargandoCalif, setCargandoCalif] = useState(false);
+
+ 
+  const [puntuacion, setPuntuacion] = useState('');
+  const [comentario, setComentario] = useState('');
+
+  useEffect(() => {
+    cargarDatos();
+  }, []);
+
+async function cargarDatos() {
+    try {
+      setCargando(true);
+    
+      const [resUsuarios, resProfesionales] = await Promise.all([
+        getUsers(),
+        getProfesionales().catch(() => []) 
+      ]);
+
+      const listaUsuarios = resUsuarios.users || resUsuarios || [];
+      const listaProfesionales = Array.isArray(resProfesionales) ? resProfesionales : [];
+
+    
+      const profesionalesFiltrados = listaUsuarios
+        .map(user => {
+          const perfilEncontrado = listaProfesionales.find(p => {
+        
+            const rawIdProf = p.usuarioId?._id || p.usuarioId;
+            if (!rawIdProf) return false;
+
+         
+            const idProfStr = String(rawIdProf._id || rawIdProf).trim();
+            const userIdStr = String(user._id || user.id || '').trim();
+
+            return idProfStr === userIdStr;
+          });
+
+          if (perfilEncontrado) {
+            return {
+              ...user,
+              _id: perfilEncontrado._id, 
+              usuarioRealId: user._id,    
+              profesion: perfilEncontrado.profesion || "Profesional"
+            };
+          }
+          return null; 
+        })
+        .filter(user => user !== null); 
+
+      setUsuariosConPerfil(profesionalesFiltrados);
+    } catch (error) {
+      mostrarMensaje("Error", error.message || "No se pudieron cargar los datos");
+    } finally {
+      setCargando(false);
+    }
+  }
+  
+  async function handleVerUsuario(usuario) {
+    setUsuarioSeleccionado(usuario);
+    setModalVisible(true);
+    setPuntuacion('');
+    setComentario('');
+    await recargarCalificacionesModal(usuario._id);
+  }
+
+  async function recargarCalificacionesModal(usuarioId) {
+    try {
+      setCargandoCalif(true);
+      const data = await getCalificacionesPorProfesional(usuarioId);
+      setCalificaciones(data);
+    } catch (error) {
+      setCalificaciones([]);
+    } finally {
+      setCargandoCalif(false);
+    }
+  }
+
+  async function handleCrearCalificacion() {
+    const numPuntuacion = Number(puntuacion);
+    if (!puntuacion || numPuntuacion < 1 || numPuntuacion > 5) {
+      mostrarMensaje("Atención", "La puntuación es obligatoria y debe ser un número del 1 al 5");
+      return;
+    }
+
+    try {
+      await crearCalificacion({
+        profesionalId: usuarioSeleccionado._id,
+        puntuacion: numPuntuacion,
+        comentario
+      });
+
+      mostrarMensaje("Éxito", "Calificación agregada correctamente");
+      setPuntuacion('');
+      setComentario('');
+      await recargarCalificacionesModal(usuarioSeleccionado._id);
+    } catch (error) {
+      mostrarMensaje("Error", error.message);
+    }
+  }
+
+  async function handleDeleteCalificacion(idCalificacion) {
+    try {
+      await eliminarCalificacion(idCalificacion);
+      mostrarMensaje("Éxito", "Calificación eliminada correctamente");
+      await recargarCalificacionesModal(usuarioSeleccionado._id);
+    } catch (error) {
+      mostrarMensaje("Error", error.message);
+    }
+  }
+
+  const mostrarMensaje = (titulo, mensaje) => {
+    if (Platform.OS === 'web') {
+      alert(`${titulo}: ${mensaje}`);
+    } else {
+      Alert.alert(titulo, mensaje);
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.titulo}>Panel de Calificaciones</Text>
+      <Text style={styles.subtitulo}>Visualiza y califica únicamente a los usuarios con perfil profesional</Text>
+      
+      {/* Lista filtrada solo con profesionales */}
+      <FlatList
+        data={usuariosConPerfil}
+        keyExtractor={(item) => item._id || item.id || Math.random().toString()}
+        refreshing={cargando}
+        onRefresh={cargarDatos}
+        renderItem={({ item }) => (
+          <TouchableOpacity 
+            style={styles.itemCard} 
+            onPress={() => handleVerUsuario(item)}
+          >
+            <View style={styles.infoLeft}>
+              <View style={styles.badge} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.itemTexto}>👤 {item.username || item.email}</Text>
+                <Text style={styles.itemSubtexto}>💼 {item.profesion}</Text>
+              </View>
+            </View>
+            <Text style={styles.verTexto}>Calificar ➔</Text>
+          </TouchableOpacity>
+        )}
+        ListEmptyComponent={
+          <Text style={styles.textoVacio}>No hay profesionales registrados.</Text>
+        }
+      />
+
+     
+      <Modal visible={modalVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalContainer}>
+            
+            <Text style={styles.modalTitulo}>
+              Calificar a: {usuarioSeleccionado?.username}
+            </Text>
+            <Text style={styles.modalSubtitulo}>
+              Profesión: {usuarioSeleccionado?.profesion}
+            </Text>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              
+             
+              <View style={styles.formContainer}>
+                <Text style={styles.subtituloForm}>Añadir Nueva Calificación</Text>
+                
+                <TextInput 
+                  style={styles.input} 
+                  placeholder="Puntuación (1 al 5)" 
+                  placeholderTextColor="#64748b" 
+                  keyboardType="numeric"
+                  value={puntuacion} 
+                  onChangeText={setPuntuacion} 
+                />
+                
+                <TextInput 
+                  style={styles.input} 
+                  placeholder="Comentario (opcional)" 
+                  placeholderTextColor="#64748b" 
+                  value={comentario} 
+                  onChangeText={setComentario} 
+                />
+
+                <TouchableOpacity style={styles.botonCrear} onPress={handleCrearCalificacion}>
+                  <Text style={styles.textoBotonCrear}>Guardar Reseña</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.subtituloForm}>Reseñas Existentes ({calificaciones.length})</Text>
+
+             
+              {cargandoCalif ? (
+                <Text style={styles.textoVacio}>Cargando reseñas...</Text>
+              ) : calificaciones.length === 0 ? (
+                <Text style={styles.textoVacio}>Este profesional aún no tiene calificaciones.</Text>
+              ) : (
+                calificaciones.map((item) => (
+                  <View key={item._id} style={styles.califCard}>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={styles.estrellas}>⭐ {item.puntuacion} / 5</Text>
+                      <Text style={styles.comentarioText}>
+                        "{item.comentario || 'Sin comentario'}"
+                      </Text>
+                      <Text style={styles.usuarioCalif}>
+                        Por: {item.usuarioId?.username || 'Usuario'}
+                      </Text>
+                    </View>
+
+                    <TouchableOpacity 
+                      style={styles.botonEliminarCalif} 
+                      onPress={() => handleDeleteCalificacion(item._id)}
+                    >
+                      <Text style={styles.textoEliminarCalif}>Eliminar</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+
+            <TouchableOpacity style={styles.botonCerrar} onPress={() => setModalVisible(false)}>
+              <Text style={styles.textoCerrar}>Cerrar Ventana</Text>
+            </TouchableOpacity>
+
+          </View>
+        </View>
+      </Modal>
+
+    </View>
+  );
+}
+
+
+
+
+categoria  -------------------------------------------------------------------------------------------------------------------------------------------------------
+
+import React, { useEffect, useState } from 'react';
+import { 
+  View, Text, TextInput,TouchableOpacity,FlatList, StyleSheet, Platform,Alert} from "react-native";
+import { getCategorias, crearCategoria, eliminarCategoria } from "../api/CategoriaApi";
+
+export default function Categoria() {
+  const [categorias, setCategorias] = useState([]);
+  const [cargando, setCargando] = useState(true);
+
+  const [nombre, setNombre] = useState('');
+  const [descripcion, setDescripcion] = useState('');
+
+  useEffect(() => {
+    cargarDatos();
+  }, []);
+
+  async function cargarDatos() {
+    try {
+      setCargando(true);
+      const datos = await getCategorias();
+      setCategorias(datos);
+    } catch (error) {
+      mostrarMensaje("Error", error.message || "No se pudieron cargar las categorías");
+    } finally {
+      setCargando(false);
+    }
+  }
+
+  async function handleCrear() {
+    if (!nombre.trim()) {
+      mostrarMensaje("Atención", "El nombre de la categoría es obligatorio");
+      return;
+    }
+
+    try {
+      await crearCategoria({ nombre, descripcion });
+      mostrarMensaje("Éxito", "Categoría creada correctamente");
+      setNombre('');
+      setDescripcion('');
+      cargarDatos();
+    } catch (error) {
+      mostrarMensaje("Error", error.message);
+    }
+  }
+
+  async function handleDelete(id) {
+    try {
+      await eliminarCategoria(id);
+      mostrarMensaje("Éxito", "Categoría eliminada");
+      cargarDatos();
+    } catch (error) {
+      mostrarMensaje("Error", error.message);
+    }
+  }
+
+  const mostrarMensaje = (titulo, mensaje) => {
+    if (Platform.OS === 'web') {
+      alert(`${titulo}: ${mensaje}`);
+    } else {
+      Alert.alert(titulo, mensaje);
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.titulo}>Gestión de Categorías</Text>
+      
+      {/* Formulario */}
+      <View style={styles.formContainer}>
+        <Text style={styles.subtituloForm}>Nueva Categoría</Text>
+        
+        <TextInput 
+          style={styles.input} 
+          placeholder="Nombre de la categoría" 
+          placeholderTextColor="#64748b" 
+          value={nombre} 
+          onChangeText={setNombre} 
+        />
+        
+        <TextInput 
+          style={styles.input} 
+          placeholder="Descripción (opcional)" 
+          placeholderTextColor="#64748b" 
+          value={descripcion} 
+          onChangeText={setDescripcion} 
+        />
+
+        <TouchableOpacity style={styles.botonCrear} onPress={handleCrear}>
+          <Text style={styles.textoBotonCrear}>Guardar Categoría</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={styles.subtitulo}>Categorías Existentes</Text>
+
+      {/* Lista */}
+      <FlatList
+        data={categorias}
+        keyExtractor={(item) => item._id || item.id || Math.random().toString()}
+        refreshing={cargando}
+        onRefresh={cargarDatos}
+        renderItem={({ item }) => (
+          <View style={styles.itemCard}>
+            <View style={styles.infoLeft}>
+              <View style={styles.badge} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.itemTexto}>{item.nombre}</Text>
+                <Text style={styles.itemSubtexto}>{item.descripcion || 'Sin descripción'}</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity 
+              style={styles.botonEliminar} 
+              onPress={() => handleDelete(item._id)}
+            >
+              <Text style={styles.textoBotonEliminar}>Eliminar</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        ListEmptyComponent={
+          <Text style={styles.textoVacio}>No hay categorías registradas aún.</Text>
+        }
+      />
+    </View>
+  );
+}
+
+
+
+home  -------------------------------------------------------------------------------------------------------------------------------------------------------
+
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from "react-native";
+
+export default function Home() {
+    return (
+        <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+        
+            <View style={styles.welcomeCard}>
+                <View style={styles.badge} />
+                <View style={{ flex: 1 }}>
+                    <Text style={styles.welcomeTitle}>¡Bienvenido de nuevo! 👋</Text>
+                    <Text style={styles.welcomeSubtitle}>
+                        Gestiona profesionales, categorías y calificaciones desde tu panel de control.
+                    </Text>
+                </View>
+            </View>
+
+           
+            <Text style={styles.sectionTitle}>Acceso Rápido</Text>
+            
+            <View style={styles.gridContainer}>
+                <View style={styles.card}>
+                    <Text style={styles.cardIcon}>💼</Text>
+                    <Text style={styles.cardTitle}>Profesionales</Text>
+                    <Text style={styles.cardText}>Administra los perfiles registrados.</Text>
+                </View>
+
+                <View style={styles.card}>
+                    <Text style={styles.cardIcon}>⭐</Text>
+                    <Text style={styles.cardTitle}>Calificaciones</Text>
+                    <Text style={styles.cardText}>Revisa reseñas y puntuaciones.</Text>
+                </View>
+            </View>
+        </ScrollView>
+    );
+}
+
+const styles = StyleSheet.create({
+    container: { 
+        flex: 1, 
+        backgroundColor: '#0f172a' 
+    },
+    contentContainer: { 
+        padding: 24,
+        paddingBottom: 40 
+    },
+    welcomeCard: { 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        backgroundColor: '#1e293b', 
+        padding: 20, 
+        borderRadius: 14, 
+        marginBottom: 24, 
+        borderWidth: 1, 
+        borderColor: '#334155',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
+        elevation: 5
+    },
+    badge: { 
+        width: 6, 
+        height: 50, 
+        borderRadius: 3, 
+        backgroundColor: '#38bdf8', 
+        marginRight: 14 
+    },
+    welcomeTitle: { 
+        fontSize: 20, 
+        fontWeight: 'bold', 
+        color: '#f8fafc', 
+        marginBottom: 4 
+    },
+    welcomeSubtitle: { 
+        fontSize: 13, 
+        color: '#94a3b8', 
+        lineHeight: 18 
+    },
+    sectionTitle: { 
+        fontSize: 18, 
+        fontWeight: 'bold', 
+        color: '#f8fafc', 
+        marginBottom: 14 
+    },
+    gridContainer: { 
+        flexDirection: 'row', 
+        justifyContent: 'space-between',
+        gap: 12 
+    },
+    card: { 
+        flex: 1, 
+        backgroundColor: '#1e293b', 
+        padding: 16, 
+        borderRadius: 12, 
+        borderWidth: 1, 
+        borderColor: '#334155' 
+    },
+    cardIcon: { 
+        fontSize: 24, 
+        marginBottom: 8 
+    },
+    cardTitle: { 
+        fontSize: 16, 
+        fontWeight: 'bold', 
+        color: '#e2e8f0', 
+        marginBottom: 4 
+    },
+    cardText: { 
+        fontSize: 12, 
+        color: '#94a3b8', 
+        lineHeight: 16 
+    }
+});
+
+
+
+nav  -------------------------------------------------------------------------------------------------------------------------------------------------------
+
+import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
+import { createDrawerNavigator } from '@react-navigation/drawer';
+
+import Home from './Home'; 
+import Rol from './Rol';
+import User from './User';
+import Profecionales from './Profecionales';
+import Categorias from './Categoria'; 
+import Calificaciones from './Calificaciones';
+
+const Drawer = createDrawerNavigator();
+
+export default function Nav() {
+  return (
+    <NavigationContainer>
+      <Drawer.Navigator 
+        initialRouteName="Home"
+        screenOptions={{
+        
+          headerStyle: {
+            backgroundColor: '#1e293b', 
+            shadowColor: 'transparent', 
+            elevation: 0, 
+          },
+          headerTintColor: '#f8fafc',
+          headerTitleStyle: {
+            fontWeight: 'bold',
+          },
+          
+          drawerStyle: {
+            backgroundColor: '#0f172a', 
+            width: 280,
+          },
+          drawerActiveBackgroundColor: '#3b82f6', 
+          drawerActiveTintColor: '#ffffff', 
+          drawerInactiveTintColor: '#94a3b8', 
+          drawerLabelStyle: {
+            fontSize: 15,
+            fontWeight: '600',
+          },
+        }}
+      >
+        <Drawer.Screen 
+          name="Home" 
+          component={Home} 
+          options={{ title: 'Inicio' }}
+        />
+        <Drawer.Screen 
+          name="Rol" 
+          component={Rol} 
+          options={{ title: 'Roles' }}
+        />
+        <Drawer.Screen 
+          name="User" 
+          component={User} 
+          options={{ title: 'Usuarios' }}
+        />
+        <Drawer.Screen 
+          name="Profecionales" 
+          component={Profecionales} 
+          options={{ title: 'Perfiles Profesionales' }}
+        />
+        <Drawer.Screen 
+          name="Categoria" 
+          component={Categorias} 
+          options={{ title: 'Categorías' }}
+        />
+        <Drawer.Screen 
+          name="Calificacion" 
+          component={Calificaciones} 
+          options={{ title: 'Calificaciones' }}
+        />
+      </Drawer.Navigator>
+    </NavigationContainer>
+  );
+}
+
+
+
+profecionales  -------------------------------------------------------------------------------------------------------------------------------------------------------
+
+import React, { useEffect, useState } from 'react';
+import { 
+  View, Text, TextInput,TouchableOpacity,FlatList, StyleSheet, Modal,Platform,ScrollView,Alert} from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getUsers } from "../api/UserApi";
+import { getCategorias } from "../api/CategoriaApi"; 
+
+// URL base de tu API de profesionales
+const API_URL_PROF = 'http://localhost:5000/api/profesionales';
+
+export default function Profecionales() {
+  const [usuarios, setUsuarios] = useState([]);
+  const [profesionalesRegistrados, setProfesionalesRegistrados] = useState([]);
+  const [listaCategorias, setListaCategorias] = useState([]); 
+  const [cargando, setCargando] = useState(true);
+  const [miIdUsuario, setMiIdUsuario] = useState(null);
+
+
+  const [modalVisible, setModalVisible] = useState(false);
+  const [tienePerfil, setTienePerfil] = useState(false);
+  const [perfilActual, setPerfilActual] = useState(null);
+  const [usuarioSeleccionadoId, setUsuarioSeleccionadoId] = useState(null);
+
+
+  const [categoriaId, setCategoriaId] = useState(''); 
+  const [profesion, setProfesion] = useState('');
+  const [telefono, setTelefono] = useState('');
+  const [ubicacion, setUbicacion] = useState('');
+  const [descripcion, setDescripcion] = useState('');
+  const [experienciaAnos, setExperienciaAnos] = useState('');
+
+  useEffect(() => {
+    cargarDatosIniciales();
+  }, []);
+
+  async function cargarDatosIniciales() {
+    try {
+      setCargando(true);
+      const idLogueado = await AsyncStorage.getItem('usuarioId'); 
+      setMiIdUsuario(idLogueado);
+
+      const token = await AsyncStorage.getItem('token');
+      
+      
+      const resUsuarios = await getUsers();
+      setUsuarios(resUsuarios.users || []);
+
+      const categoriasData = await getCategorias(); 
+      setListaCategorias(categoriasData);
+
+      const resProf = await fetch(API_URL_PROF, {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      const dataProf = await resProf.json();
+      if (resProf.ok) {
+        setProfesionalesRegistrados(dataProf);
+      }
+
+    } catch (error) {
+      mostrarMensaje("Error", "No se pudieron cargar los datos iniciales");
+    } finally {
+      setCargando(false);
+    }
+  }
+
+  
+  async function handleVerUsuario(usuario) {
+    setUsuarioSeleccionadoId(usuario._id);
+
+    const perfilEncontrado = profesionalesRegistrados.find(p => {
+      const idDelProf = p.usuarioId?._id || p.usuarioId;
+      return idDelProf === usuario._id;
+    });
+
+    if (perfilEncontrado) {
+      setTienePerfil(true);
+      setPerfilActual(perfilEncontrado);
+    } else {
+      setTienePerfil(false);
+      setPerfilActual(null);
+      setCategoriaId('');
+    }
+    setModalVisible(true);
+  }
+
+  async function handleCrearPerfil() {
+    if (!profesion || !telefono || !ubicacion || !categoriaId) {
+      mostrarMensaje("Atención", "Por favor completa los campos obligatorios y selecciona una categoría");
+      return;
+    }
+
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const respuesta = await fetch(API_URL_PROF, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + token,
+        },
+        body: JSON.stringify({
+          usuarioId: usuarioSeleccionadoId, 
+          categoriaId,
+          profesion,
+          telefono,
+          ubicacion,
+          descripcion,
+          experienciaAnos: Number(experienciaAnos) || 0
+        }),
+      });
+
+      const data = await respuesta.json();
+      if (!respuesta.ok) throw new Error(data.error || 'No se pudo crear el perfil');
+
+      mostrarMensaje("Éxito", "Perfil profesional creado con éxito");
+      setModalVisible(false);
+      setProfesion(''); setTelefono(''); setUbicacion(''); setDescripcion(''); setExperienciaAnos(''); setCategoriaId('');
+      cargarDatosIniciales(); 
+    } catch (error) {
+      mostrarMensaje("Error", error.message);
+    }
+  }
+
+  async function handleEliminarPerfil(idPerfil) {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const respuesta = await fetch(`${API_URL_PROF}/${idPerfil}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': 'Bearer ' + token },
+      });
+
+      const data = await respuesta.json();
+      if (!respuesta.ok) throw new Error(data.error || 'No se pudo eliminar el perfil');
+
+      mostrarMensaje("Éxito", "Perfil profesional eliminado");
+      setModalVisible(false);
+      cargarDatosIniciales(); 
+    } catch (error) {
+      mostrarMensaje("Error", error.message);
+    }
+  }
+
+  const mostrarMensaje = (titulo, mensaje) => {
+    if (Platform.OS === 'web') {
+      alert(`${titulo}: ${mensaje}`);
+    } else {
+      Alert.alert(titulo, mensaje);
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.titulo}>Selecciona un Usuario</Text>
+      
+      <FlatList
+        data={usuarios}
+        keyExtractor={(item) => item._id || item.id || Math.random().toString()}
+        refreshing={cargando}
+        onRefresh={cargarDatosIniciales}
+        renderItem={({ item }) => {
+          const esMiUsuario = item._id === miIdUsuario;
+          const tieneReg = profesionalesRegistrados.some(p => (p.usuarioId?._id || p.usuarioId) === item._id);
+
+          return (
+            <TouchableOpacity 
+              style={[styles.itemCard, esMiUsuario && styles.cardMiUsuario]} 
+              onPress={() => handleVerUsuario(item)}
+            >
+              <View style={styles.infoLeft}>
+                <View style={[styles.badge, esMiUsuario && styles.badgeMiUsuario]} />
+                <View>
+                  <Text style={styles.itemTexto}>
+                    {item.username} {esMiUsuario && "(Tú)"}
+                  </Text>
+                  <Text style={styles.itemSubtexto}>
+                    {item.email} {tieneReg ? " • 🟢 Con Perfil" : " • ⚪ Sin Perfil"}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.verTexto}>Ver ➔</Text>
+            </TouchableOpacity>
+          );
+        }}
+        ListEmptyComponent={
+          <Text style={styles.textoVacio}>No hay usuarios disponibles.</Text>
+        }
+      />
+
+      {/* MODAL CONDICIONAL */}
+      <Modal visible={modalVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalContainer}>
+            
+            {tienePerfil ? (
+              <View>
+                <Text style={styles.modalTitulo}>Perfil Profesional Encontrado</Text>
+                <Text style={styles.textoDato}>💼 <Text style={styles.negrita}>Profesión:</Text> {perfilActual?.profesion}</Text>
+                
+                {/* Mostramos el nombre de la categoría si viene poblada, o el ID */}
+                <Text style={styles.textoDato}>🏷️ <Text style={styles.negrita}>Categoría:</Text> {perfilActual?.categoriaId?.nombre || 'Categoría asignada'}</Text>
+                
+                <Text style={styles.textoDato}>📍 <Text style={styles.negrita}>Ubicación:</Text> {perfilActual?.ubicacion}</Text>
+                <Text style={styles.textoDato}>📞 <Text style={styles.negrita}>Teléfono:</Text> {perfilActual?.telefono}</Text>
+                <Text style={styles.textoDato}>📝 <Text style={styles.negrita}>Descripción:</Text> {perfilActual?.descripcion || 'Sin descripción'}</Text>
+                <Text style={styles.textoDato}>⏳ <Text style={styles.negrita}>Experiencia:</Text> {perfilActual?.experienciaAnos} años</Text>
+
+                <TouchableOpacity 
+                  style={styles.botonEliminarModal} 
+                  onPress={() => handleEliminarPerfil(perfilActual._id)}
+                >
+                  <Text style={styles.textoBotonEliminar}>Eliminar Perfil Profesional</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <Text style={styles.modalTitulo}>Registrar Perfil Profesional</Text>
+                
+                {/* SELECTOR / SPINNER DE CATEGORÍAS */}
+                <Text style={styles.labelSelector}>Selecciona una Categoría:</Text>
+                <View style={styles.selectorContainer}>
+                  {listaCategorias.length === 0 ? (
+                    <Text style={styles.textoVacioSelector}>No hay categorías creadas aún.</Text>
+                  ) : (
+                    listaCategorias.map((cat) => {
+                      const seleccionada = categoriaId === cat._id;
+                      return (
+                        <TouchableOpacity
+                          key={cat._id}
+                          style={[styles.catOption, seleccionada && styles.catOptionSelected]}
+                          onPress={() => setCategoriaId(cat._id)}
+                        >
+                          <Text style={[styles.catOptionText, seleccionada && styles.catOptionTextSelected]}>
+                            {cat.nombre}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                </View>
+
+                <TextInput style={styles.input} placeholder="Profesión o Título" placeholderTextColor="#64748b" value={profesion} onChangeText={setProfesion} />
+                <TextInput style={styles.input} placeholder="Teléfono" placeholderTextColor="#64748b" keyboardType="phone-pad" value={telefono} onChangeText={setTelefono} />
+                <TextInput style={styles.input} placeholder="Ubicación o Ciudad" placeholderTextColor="#64748b" value={ubicacion} onChangeText={setUbicacion} />
+                <TextInput style={styles.input} placeholder="Descripción" placeholderTextColor="#64748b" value={descripcion} onChangeText={setDescripcion} />
+                <TextInput style={styles.input} placeholder="Años de experiencia" placeholderTextColor="#64748b" keyboardType="numeric" value={experienciaAnos} onChangeText={setExperienciaAnos} />
+
+                <TouchableOpacity style={styles.botonCrearModal} onPress={handleCrearPerfil}>
+                  <Text style={styles.textoBotonCrear}>Guardar Perfil</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+
+            <TouchableOpacity style={styles.botonCerrar} onPress={() => setModalVisible(false)}>
+              <Text style={styles.textoCerrar}>Cerrar</Text>
+            </TouchableOpacity>
+
+          </View>
+        </View>
+      </Modal>
+
+    </View>
+  );
+}
+
+
+Rol  -------------------------------------------------------------------------------------------------------------------------------------------------------
+
+import React, { useEffect, useState } from 'react';
+import { 
+  View, Text,  TextInput, TouchableOpacity, FlatList, StyleSheet, Alert,Platform} from "react-native";
+import { getRoles, postRol, deleteRol } from "../api/RolApi"; 
+export default function Rol() {
+  const [roles, setRoles] = useState([]);
+  const [nuevoRol, setNuevoRol] = useState('');
+  const [cargando, setCargando] = useState(false);
+
+  useEffect(() => {
+    llamadaApi();
+  }, []);
+
+  async function llamadaApi() {
+    try {
+      const datos = await getRoles();
+      setRoles(datos);
+    } catch (error) {
+      console.error("Error al cargar roles:", error);
+    }
+  }
+
+  const mostrarMensaje = (titulo, mensaje) => {
+    if (Platform.OS === 'web') {
+      alert(`${titulo}: ${mensaje}`);
+    } else {
+      Alert.alert(titulo, mensaje);
+    }
+  };
+
+  async function handleCrearRol() {
+    if (!nuevoRol.trim()) {
+      return mostrarMensaje("Atención", "Ingresa un nombre de rol válido");
+    }
+
+    try {
+      setCargando(true);
+      await postRol(nuevoRol.trim());
+      setNuevoRol('');
+      await llamadaApi(); 
+    } catch (error) {
+      console.error("Error al crear el rol:", error);
+      mostrarMensaje("Error", "No se pudo crear el rol");
+    } finally {
+      setCargando(false);
+    }
+  }
+
+
+  async function handleEliminarRol(id, nombre) {
+    const confirmarYEliminar = async () => {
+      try {
+       
+        await deleteRol(id);
+        
+       
+        setRoles((prev) => prev.filter((r) => (r._id || r.id) !== id));
+        mostrarMensaje("Eliminado", `El rol "${nombre}" fue eliminado.`);
+      } catch (error) {
+        console.error("Error al eliminar rol:", error);
+        mostrarMensaje("Error", "No se pudo eliminar el rol");
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(`¿Estás seguro de eliminar el rol "${nombre}"?`)) {
+        await confirmarYEliminar();
+      }
+    } else {
+      Alert.alert(
+        "Eliminar Rol",
+        `¿Estás seguro de eliminar el rol "${nombre}"?`,
+        [
+          { text: "Cancelar", style: "cancel" },
+          { text: "Eliminar", style: "destructive", onPress: confirmarYEliminar }
+        ]
+      );
+    }
+  }
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.titulo}>Gestión de Roles</Text>
+
+      
+      <View style={styles.formContainer}>
+        <Text style={styles.subtitulo}>Escribe el nuevo rol</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Nombre del nuevo rol (ej. Admin, Vendedor)"
+          placeholderTextColor="#64748b"
+          value={nuevoRol}
+          onChangeText={setNuevoRol}
+        />
+        <TouchableOpacity 
+          style={[styles.boton, cargando && styles.botonDesactivado]} 
+          onPress={handleCrearRol}
+          disabled={cargando}
+        >
+          <Text style={styles.textoBoton}>
+            {cargando ? "Guardando..." : "Guardar Rol"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+     
+      <Text style={styles.subtitulo}>Lista de Roles</Text>
+      <FlatList
+        data={roles}
+        keyExtractor={(item) => item._id || item.id || Math.random().toString()}
+        renderItem={({ item }) => {
+          const id = item._id || item.id;
+          return (
+            <View style={styles.itemCard}>
+              <View style={styles.infoLeft}>
+                <View style={styles.badge} />
+                <Text style={styles.itemTexto}>{item.nombre}</Text>
+              </View>
+
+              {/* Botón Eliminar */}
+              <TouchableOpacity 
+                style={styles.botonEliminar}
+                onPress={() => handleEliminarRol(id, item.nombre)}
+              >
+                <Text style={styles.textoEliminar}>✕</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        }}
+        ListEmptyComponent={
+          <Text style={styles.textoVacio}>No hay roles registrados aún.</Text>
+        }
+      />
+    </View>
+  );
+}
+
+
+
+User -------------------------------------------------------------------------------------------------------------------------------------------------------
+
+import React, { useEffect, useState } from 'react';
+import { 
+  View, Text, TextInput,TouchableOpacity,FlatList, StyleSheet, Platform,Alert
+} from "react-native";
+import { getUsers, registerUser, deleteUser } from "../api/UserApi";
+
+export default function Usuarios() {
+  const [usuarios, setUsuarios] = useState([]);
+  const [cargando, setCargando] = useState(true);
+
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  useEffect(() => {
+    cargarUsuarios();
+  }, []);
+
+  async function cargarUsuarios() {
+    try {
+      setCargando(true);
+      const datos = await getUsers();
+      setUsuarios(datos.users); 
+    } catch (error) {
+      mostrarMensaje("Error", "No se pudieron cargar los usuarios");
+    } finally {
+      setCargando(false);
+    }
+  }
+
+  async function handleRegister() {
+    if (!username || !email || !password) {
+      mostrarMensaje("Atención", "Por favor completa todos los campos");
+      return;
+    }
+
+    try {
+      await registerUser({ username, email, password });
+      mostrarMensaje("Éxito", "Usuario registrado correctamente");
+      setUsername('');
+      setEmail('');
+      setPassword('');
+      cargarUsuarios();
+    } catch (error) {
+      mostrarMensaje("Error", error.message);
+    }
+  }
+
+  async function handleDelete(id) {
+    try {
+      await deleteUser(id);
+      mostrarMensaje("Éxito", "Usuario eliminado correctamente");
+      cargarUsuarios();
+    } catch (error) {
+      mostrarMensaje("Error", error.message);
+    }
+  }
+
+  const mostrarMensaje = (titulo, mensaje) => {
+    if (Platform.OS === 'web') {
+      alert(`${titulo}: ${mensaje}`);
+    } else {
+      Alert.alert(titulo, mensaje);
+    }
+  };
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.titulo}>Gestión de Usuarios</Text>
+      
+      <View style={styles.formContainer}>
+        <Text style={styles.subtituloForm}>Registrar Nuevo Usuario</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Nombre de usuario"
+          placeholderTextColor="#64748b"
+          value={username}
+          onChangeText={setUsername}
+          autoComplete="off"
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Correo electrónico"
+          placeholderTextColor="#64748b"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          value={email}
+          onChangeText={setEmail} 
+          autoComplete="off"
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Contraseña"
+          placeholderTextColor="#64748b"
+          secureTextEntry
+          value={password}
+          onChangeText={setPassword}
+          autoComplete="new-password"
+        />
+        
+        <TouchableOpacity style={styles.botonCrear} onPress={handleRegister}>
+          <Text style={styles.textoBotonCrear}>Guardar Usuario</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={styles.subtitulo}>Lista de Usuarios Registrados</Text>
+      
+      <FlatList
+        data={usuarios}
+        keyExtractor={(item) => item._id || item.id || Math.random().toString()}
+        refreshing={cargando}
+        onRefresh={cargarUsuarios}
+        renderItem={({ item }) => (
+          <View style={styles.itemCard}>
+            <View style={styles.infoLeft}>
+              <View style={styles.badge} />
+              <View>
+                <Text style={styles.itemTexto}>{item.username}</Text>
+                <Text style={styles.itemSubtexto}>{item.email}</Text>
+                <Text style={styles.rolBadge}>Rol: {item.rol?.nombre || 'Sin rol'}</Text>
+              </View>
+            </View>
+
+            <TouchableOpacity 
+              style={styles.botonEliminar} 
+              onPress={() => handleDelete(item._id)}
+            >
+              <Text style={styles.textoBotonEliminar}>Eliminar</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        ListEmptyComponent={
+          <Text style={styles.textoVacio}>No hay usuarios registrados aún.</Text>
+        }
+      />
+    </View>
+  );
+}
+
+
