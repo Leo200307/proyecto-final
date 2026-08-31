@@ -1,1 +1,102 @@
+auth usuario ---------------------------------------------------------------------------------------------
 
+
+const express = require('express');
+const router = express.Router();
+const { login, register, deleteUser, getUsers, updateUser } = require('../controllers/authController');
+const verifyToken = require('../middleware/verifyToken');
+//const checkRole = require('../middleware/checkRole');
+
+
+router.post('/login', login);
+router.post('/register', register);
+router.delete('/users/:id', verifyToken, deleteUser);
+router.get('/users', verifyToken,  getUsers);
+router.put('/users/:id', verifyToken, updateUser);
+module.exports = router;
+
+
+calificacion ---------------------------------------------------------------------------------------------
+
+const express = require('express');
+const router = express.Router();
+const { create, getByProfesional, update, destroy } = require('../controllers/calificacionController');
+const verifyToken = require('../middleware/verifyToken');
+//const checkRole = require('../middleware/checkRole');
+
+// 1. Ver las reseñas de un profesional (Autenticado)
+router.get('/profesional/:profesionalId', verifyToken, getByProfesional);
+
+// 2. Crear / Dejar una reseña (Autenticado)
+router.post('/', verifyToken, create);
+
+// 3. Editar una reseña existente (Autenticado)
+router.put('/:id', verifyToken, update);
+
+// 4. Eliminar permanentemente una reseña (Autenticado)
+router.delete('/:id', verifyToken, destroy);
+
+module.exports = router;
+
+categoria---------------------------------------------------------------------------------------------
+
+const express = require('express');
+const router = express.Router();
+const { index, create, show, destroy, update } = require('../controllers/categoriaController');
+
+const verifyToken = require('../middleware/verifyToken');
+//const checkRole = require('../middleware/checkRole');
+
+// Cualquier usuario autenticado puede ver las categorías (para la Pantalla 1 de la App)
+router.get('/',  index);
+router.get('/:id', show);
+
+// Solo usuarios con rol 'admin' pueden registrar categorías
+router.post('/',  verifyToken,  create);
+router.delete('/:id', verifyToken,  destroy);
+router.put('/:id', verifyToken, update);
+
+module.exports = router;
+
+
+
+profecionales   ---------------------------------------------------------------------------------------------
+
+
+const express = require('express');
+const router = express.Router();
+const { index, create, show, destroy, update } = require('../controllers/profesionalController');
+
+const verifyToken = require('../middleware/verifyToken');
+//const checkRole = require('../middleware/checkRole'); 
+
+// Rutas públicas (cualquier usuario registrado en la app puede buscar y ver detalles)
+router.get('/',  index);
+router.get('/:id',  show);
+
+// Registrarse como profesional (requiere autenticación JWT)
+router.post('/', verifyToken, create);
+router.put('/:id', verifyToken, update);
+router.delete('/:id', verifyToken, destroy);
+
+module.exports = router;
+
+rol    ---------------------------------------------------------------------------------------------
+
+
+const express = require('express');
+const router = express.Router();
+const { index, show, create, update, destroy } = require('../controllers/rolController');
+
+// Importamos el middleware desde la carpeta middleware
+const verifyToken = require('../middleware/verifyToken');
+//const checkRole = require('../middleware/checkRole');
+
+// Aplicamos verifyToken a cada ruta como segundo parámetro
+router.get('/', verifyToken, index);
+router.get('/:id', verifyToken, show);
+router.post('/', verifyToken, create);
+router.put('/:id', verifyToken, update);
+router.delete('/:id', verifyToken, destroy);
+
+module.exports = router;
